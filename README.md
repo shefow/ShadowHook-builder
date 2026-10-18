@@ -28,8 +28,8 @@ GitHub Actions, который собирает [ShadowHook](https://github.com/
 ```
 shadowhook-release.aar
 shadowhook.h
-arm64-v8a/    libshadowhook.so  sh_test
-armeabi-v7a/  libshadowhook.so  sh_test
+arm64-v8a/    libshadowhook.so  libshadowhook_nothing.so  sh_test
+armeabi-v7a/  libshadowhook.so  libshadowhook_nothing.so  sh_test
 ```
 
 ## Проверка на устройстве
@@ -38,9 +38,11 @@ armeabi-v7a/  libshadowhook.so  sh_test
 
 ```sh
 # adb
-adb push arm64-v8a /data/local/tmp/sh && adb shell 'cd /data/local/tmp/sh && chmod +x sh_test && ./sh_test'
+adb push arm64-v8a /data/local/tmp/sh && adb shell 'cd /data/local/tmp/sh && chmod +x sh_test && LD_LIBRARY_PATH=. ./sh_test'
 # или Termux
-cp -r arm64-v8a ~/sh && cd ~/sh && chmod +x sh_test && ./sh_test
+cp -r arm64-v8a ~/sh && cd ~/sh && chmod +x sh_test && LD_LIBRARY_PATH=$PWD ./sh_test
 ```
+
+`libshadowhook_nothing.so` нужен самой библиотеке: при `init` она делает его `dlopen`, чтобы найти смещения в структурах линкера. Без него будет `FAIL init: 12 (Init linker mod failed)`.
 
 Ожидаемый вывод заканчивается строкой `PASS`.
