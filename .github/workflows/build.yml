@@ -1,4 +1,3 @@
-# я этот код за 15 сек навайбкодил
 name: Build ShadowHook
 
 on:
@@ -87,7 +86,7 @@ jobs:
               *) continue ;;
             esac
             mkdir -p "out/$ABI"
-            cp "$D/libshadowhook.so" "out/$ABI/"
+            cp "$D"/libshadowhook*.so "out/$ABI/"
             "$BIN/$CC" -O0 -I"$INC" test.c -L"$D" -lshadowhook -llog \
               -Wl,-rpath,'$ORIGIN' -o "out/$ABI/sh_test"
           done
@@ -110,3 +109,4 @@ jobs:
           gh release create "shadowhook-$V" "shadowhook-$V.zip" \
             --title "ShadowHook $V" --notes "Source: $URL" \
           || gh release upload "shadowhook-$V" "shadowhook-$V.zip" --clobber
+          
