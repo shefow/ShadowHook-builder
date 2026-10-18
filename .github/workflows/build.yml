@@ -1,0 +1,112 @@
+# я этот код за 15 сек навайбкодил
+name: Build ShadowHook
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Версия: 2.0.1, v2.0.1 или latest"
+        default: latest
+      java:
+        description: "Версия JDK"
+        default: "17"
+      release:
+        description: "Выложить результат в GitHub Release"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Найти версию и URL
+        id: r
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IN: ${{ inputs.version }}
+        run: |
+          set -e
+          REPO=bytedance/android-inline-hook
+          V="${IN:-latest}"
+          if [ "$V" = latest ]; then
+            V=$(gh api repos/$REPO/releases/latest --jq .tag_name 2>/dev/null \
+                || gh api repos/$REPO/tags --jq '.[0].name')
+          fi
+          V="${V#v}"
+          URL=""
+          for T in "v$V" "$V"; do
+            U="https://github.com/$REPO/archive/refs/tags/$T.zip"
+            if curl -fsIL "$U" -o /dev/null; then URL="$U"; break; fi
+          done
+          if [ -z "$URL" ]; then
+            echo "::error::Версия '$V' не найдена. Доступные теги:"
+            gh api repos/$REPO/tags --jq '.[].name' | head -20
+            exit 1
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "URL: $URL"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ inputs.java }}
+
+      - name: Скачать и собрать
+        run: |
+          set -e
+          curl -fsSL "${{ steps.r.outputs.url }}" -o src.zip
+          unzip -q src.zip && rm src.zip
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          cd android-inline-hook-*/
+          chmod +x gradlew
+          ./gradlew :shadowhook:assembleRelease --no-daemon -q
+          cd ..
+          AAR=$(find android-inline-hook-* -name 'shadowhook-release.aar' | head -1)
+          echo "AAR: $AAR"
+          mkdir -p out aar
+          unzip -q "$AAR" -d aar
+          cp "$AAR" out/
+
+      - name: Собрать тест
+        run: |
+          set -e
+          NDK="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          BIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          INC=$(ls -d android-inline-hook-*/shadowhook/src/main/cpp/include)
+          for D in aar/jni/*; do
+            ABI=$(basename "$D")
+            case "$ABI" in
+              arm64-v8a)   CC=aarch64-linux-android21-clang ;;
+              armeabi-v7a) CC=armv7a-linux-androideabi21-clang ;;
+              *) continue ;;
+            esac
+            mkdir -p "out/$ABI"
+            cp "$D/libshadowhook.so" "out/$ABI/"
+            "$BIN/$CC" -O0 -I"$INC" test.c -L"$D" -lshadowhook -llog \
+              -Wl,-rpath,'$ORIGIN' -o "out/$ABI/sh_test"
+          done
+          cp "$INC/shadowhook.h" out/
+          find out -type f
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadowhook-${{ steps.r.outputs.version }}
+          path: out
+
+      - name: Release
+        if: inputs.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.r.outputs.version }}
+          URL: ${{ steps.r.outputs.url }}
+        run: |
+          (cd out && zip -qr "../shadowhook-$V.zip" .)
+          gh release create "shadowhook-$V" "shadowhook-$V.zip" \
+            --title "ShadowHook $V" --notes "Source: $URL" \
+          || gh release upload "shadowhook-$V" "shadowhook-$V.zip" --clobber
