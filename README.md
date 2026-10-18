@@ -1,29 +1,33 @@
 # ShadowHook builder
 
-GitHub Actions, который собирает [ShadowHook](https://github.com/bytedance/android-inline-hook)
-(`libshadowhook.so` + AAR) нужной версии. URL архива ищется автоматически по тегу.
+A GitHub Actions workflow that builds [ShadowHook](https://github.com/bytedance/android-inline-hook)
+(`libshadowhook.so` + AAR) for any released version. The source archive URL is resolved
+automatically from the version tag.
 
-## Файлы
+![Test output: PASS](screenshot_2026-10-19_com.termux.jpg)
 
-| Файл | Назначение |
+## Files
+
+| File | Purpose |
 |---|---|
-| `.github/workflows/build.yml` | сборка (`workflow_dispatch`) |
-| `test.c` | самотест: хукает свою функцию, проверяет и снимает хук |
-| `README.md` | это описание |
+| `.github/workflows/build.yml` | the build (`workflow_dispatch`) |
+| `test.c` | self-test: hooks its own function, checks the result, unhooks |
+| `README.md` | this file |
+| `screenshot_2026-10-19_com.termux.jpg` | example of a passing test run |
 
-## Запуск
+## Usage
 
 **Actions → Build ShadowHook → Run workflow**
 
-- `version` — `2.0.1`, `v2.0.1` или `latest` (по умолчанию)
-- `java` — JDK для Gradle (17 по умолчанию; для старых 1.x может понадобиться 11)
-- `release` — выложить результат в GitHub Release (`shadowhook-<версия>`)
+- `version`: `2.0.1`, `v2.0.1` or `latest` (default)
+- `java`: JDK used by Gradle (default 17; older 1.x versions may need 11)
+- `release`: also publish the result as a GitHub Release (`shadowhook-<version>`)
 
-Что делает: определяет тег → скачивает `.../archive/refs/tags/v<версия>.zip` →
-`./gradlew :shadowhook:assembleRelease` → достаёт `libshadowhook.so` из AAR →
-собирает `test.c` через NDK для `arm64-v8a` и `armeabi-v7a`.
+What it does: resolves the tag → downloads `.../archive/refs/tags/v<version>.zip` →
+runs `./gradlew :shadowhook:assembleRelease` → extracts the `.so` files from the AAR →
+builds `test.c` with the NDK for `arm64-v8a` and `armeabi-v7a`.
 
-## Результат (artifact `shadowhook-<версия>`)
+## Output (artifact `shadowhook-<version>`)
 
 ```
 shadowhook-release.aar
@@ -32,17 +36,22 @@ arm64-v8a/    libshadowhook.so  libshadowhook_nothing.so  sh_test
 armeabi-v7a/  libshadowhook.so  libshadowhook_nothing.so  sh_test
 ```
 
-## Проверка на устройстве
+## Testing on a device
 
-Папку нужно положить туда, где разрешено исполнение (не `/sdcard`):
+Copy the folder somewhere executable (not `/sdcard`):
 
 ```sh
 # adb
-adb push arm64-v8a /data/local/tmp/sh && adb shell 'cd /data/local/tmp/sh && chmod +x sh_test && LD_LIBRARY_PATH=. ./sh_test'
-# или Termux
-cp -r arm64-v8a ~/sh && cd ~/sh && chmod +x sh_test && LD_LIBRARY_PATH=$PWD ./sh_test
+adb push arm64-v8a /data/local/tmp/sh
+adb shell 'cd /data/local/tmp/sh && chmod +x sh_test && LD_LIBRARY_PATH=. ./sh_test'
+
+# or Termux
+cp -r arm64-v8a ~/sh && cd ~/sh
+chmod +x sh_test && LD_LIBRARY_PATH=$PWD ./sh_test
 ```
 
-`libshadowhook_nothing.so` нужен самой библиотеке: при `init` она делает его `dlopen`, чтобы найти смещения в структурах линкера. Без него будет `FAIL init: 12 (Init linker mod failed)`.
+The output should end with `PASS` (see the screenshot above).
 
-Ожидаемый вывод заканчивается строкой `PASS`.
+`libshadowhook_nothing.so` is required by the library itself: during `init` it `dlopen`s it
+to locate offsets inside the linker's structures. Without it you get
+`FAIL init: 12 (Init linker mod failed)`. `LD_LIBRARY_PATH` tells the loader where to find it.
